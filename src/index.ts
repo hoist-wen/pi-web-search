@@ -9,7 +9,11 @@ const WEB_SEARCH_TOOL = "web_search";
 const URL_CONTEXT_TOOL = "url_context";
 
 function supportsUrlContext(model: Model<Api> | undefined) {
-    return !!model && getProviderKind(model) === "google";
+    if (!model) return false;
+    const kind = getProviderKind(model);
+    // Gemini has native URL Context; Command Code serves URL reading from its own
+    // /alpha/web-fetch endpoint, so url_context is meaningful for both.
+    return kind === "google" || kind === "commandcode";
 }
 
 function setEquals<T>(a: Set<T>, b: Set<T>) {
@@ -63,7 +67,7 @@ export default function (pi: ExtensionAPI) {
     pi.registerTool({
         name: WEB_SEARCH_TOOL,
         label: "Web Search",
-        description: "Search the web using the current supported provider (Google Gemini, xAI Grok, OpenAI, Anthropic, or OpenCode Zen/Go). Optionally include URLs to analyze alongside search results.",
+        description: "Search the web using the current supported provider (Google Gemini, xAI Grok, OpenAI, Anthropic, Command Code, or OpenCode Zen/Go). Optionally include URLs to analyze alongside search results.",
         parameters: WebSearchSchema,
         execute: (id, params, signal = new AbortController().signal, onUpdate, ctx): Promise<AgentToolResult<any>> =>
             webSearch(id, params, signal, onUpdate, ctx, pi.getThinkingLevel()),
@@ -93,7 +97,7 @@ export default function (pi: ExtensionAPI) {
     pi.registerTool({
         name: URL_CONTEXT_TOOL,
         label: "URL Context",
-        description: "Analyze the content of up to 20 public URLs using Gemini URL Context. Supports web pages, documents, images, and YouTube videos.",
+        description: "Analyze the content of up to 20 public URLs. Uses Gemini URL Context on Gemini models and Command Code's web-fetch backend on Command Code models. Supports web pages, documents, images, and YouTube videos.",
         parameters: UrlContextSchema,
         execute: urlContext
     });

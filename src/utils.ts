@@ -7,7 +7,7 @@ import { getProviderKind } from "./api.ts";
 
 // --- Model Selection ---
 
-const SUPPORTED_PROVIDERS = ["google-generative-ai", "antigravity", "xai", "openai-responses", "azure-openai-responses", "openai-codex-responses", "anthropic-messages"];
+const SUPPORTED_PROVIDERS = ["google-generative-ai", "antigravity", "xai", "openai-responses", "azure-openai-responses", "openai-codex-responses", "anthropic-messages", "commandcode"];
 
 type WebSearchModelConfig =
     | { status: "missing"; path: string; }
@@ -86,6 +86,32 @@ export async function getWebSearchModel(ctx: ExtensionContext): Promise<Model<Ap
     }
 
     return getModel(ctx);
+}
+
+/**
+ * Pick the model backing `web_search`.
+ *
+ * An explicit `web-search.json` selection always wins and keeps its own error
+ * reporting, so a misconfigured pin is never silently papered over. Only when
+ * nothing is pinned and the conversation model has no native search do we fall
+ * back to a Command Code model: its search is not billed as a chat completion,
+ * it is an `apiBase`-level request authenticated with the Command Code key the
+ * user already configured, so it cannot cause a surprise model charge.
+ */
+export async function resolveWebSearchModel(ctx: ExtensionContext): Promise<Model<Api> | undefined> {
+    const selected = await getWebSearchModel(ctx);
+    if (selected) return selected;
+    if (readWebSearchModelConfig().status !== "missing") return undefined;
+    return findCommandCodeFallbackModel(ctx);
+}
+
+/** First available Command Code model, used only as a last-resort search backend. */
+function findCommandCodeFallbackModel(ctx: ExtensionContext): Model<Api> | undefined {
+    try {
+        return ctx.modelRegistry.getAvailable().find((candidate) => isSupportedSearchModel(candidate) && candidate.provider === "commandcode");
+    } catch {
+        return undefined;
+    }
 }
 
 // --- Error Results ---

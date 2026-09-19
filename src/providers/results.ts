@@ -1,4 +1,4 @@
-import type { SearchResultDetail, Source } from "./types.ts";
+import type { SearchResultDetail, Source, StreamResult } from "./types.ts";
 
 export function pushUniqueSource(sources: Source[], source: Source): number {
     const url = source.url || "";
@@ -175,4 +175,33 @@ export function applyTextCitations(text: string, citations: Array<{ citedText?: 
     }
 
     return { text: result, sources };
+}
+
+/**
+ * Merge two `StreamResult`s into one, deduplicating sources and search results.
+ *
+ * Used when a tool performs more than one backend call for a single request —
+ * a Command Code search plus a fetch of the caller-supplied URLs, for example.
+ */
+export function mergeStreamResults(primary: StreamResult, extra: StreamResult): StreamResult {
+    const sources = [...(primary.sources || [])];
+    for (const source of extra.sources || []) pushUniqueSource(sources, source);
+
+    const searchResults = [...(primary.searchResults || [])];
+    for (const result of extra.searchResults || []) pushUniqueSearchResult(searchResults, result);
+
+    const citations = [...(primary.citations || [])];
+    for (const citation of extra.citations || []) pushUniqueSearchResult(citations, citation);
+
+    return {
+        ...primary,
+        text: [primary.text, extra.text].filter((part) => part && part.trim() !== "").join("\n\n"),
+        sources,
+        searchResults,
+        citations,
+        urlContextMetadata: extra.urlContextMetadata ?? primary.urlContextMetadata,
+        nativeSearchEvents: [...new Set([...(primary.nativeSearchEvents || []), ...(extra.nativeSearchEvents || [])])],
+        nativeSearchCalls: [...(primary.nativeSearchCalls || []), ...(extra.nativeSearchCalls || [])],
+        searchQueries: [...new Set([...(primary.searchQueries || []), ...(extra.searchQueries || [])])],
+    };
 }

@@ -23,7 +23,7 @@ test('url_context rejects non-Gemini providers with a clear error', async () => 
     mockCtx('test-key', model),
   );
 
-  assert.match(result.content[0].text, /requires a Google Gemini-compatible model/i);
+  assert.match(result.content[0].text, /requires a provider with URL retrieval/i);
   assert.equal(result.details.error, 'unsupported_provider');
   assert.equal(result.details.providerKind, 'openai');
   assert.equal(result.details.grounded, false);

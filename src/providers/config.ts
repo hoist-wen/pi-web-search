@@ -1,4 +1,5 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
+import { COMMAND_CODE_PROVIDER } from "./commandcode.ts";
 import type { ProviderKind } from "./types.ts";
 import type { ResolvedAuth } from "./auth.ts";
 
@@ -76,6 +77,10 @@ const GOOGLE_PROVIDERS: Record<string, ProviderConfig> = {
 
 export function getProviderKind(model: Model<Api>): ProviderKind {
     if (model.provider === "antigravity" || model.api === "antigravity") return "google";
+    // Command Code models have no provider-native web search tool: the backend
+    // lives in this extension and talks to Command Code's /alpha/web-search and
+    // /alpha/web-fetch endpoints with the provider's own credentials.
+    if (model.provider === COMMAND_CODE_PROVIDER) return "commandcode";
     if (GOOGLE_PROVIDERS[model.provider] || GOOGLE_PROVIDERS[model.api]) return "google";
     if (model.provider === "xai" && model.api === "openai-responses") return "xai";
     if (

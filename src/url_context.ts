@@ -2,7 +2,8 @@ import type { ExtensionContext, AgentToolUpdateCallback } from "@earendil-works/
 import { Type, type Static } from "typebox";
 import { callApiStream, getConfig } from "./api.ts";
 import { formatResult, formatUrlContextResult } from "./format.ts";
-import { getModel, missingConfigResult, errorResult } from "./utils.ts";
+import { commandCodeUrlFetch } from "./providers/commandcode.ts";
+import { errorResult, getModel, missingConfigResult } from "./utils.ts";
 
 export const UrlContextSchema = Type.Object({
     query: Type.String({ description: "Question or task to perform on the URLs" }),
@@ -31,14 +32,23 @@ export async function urlContext(
 
     try {
         const config = getConfig(model);
+
+        // Command Code serves URL reading from its own /alpha/web-fetch endpoint
+        // with the provider's existing credentials, so it is a real alternative
+        // to Gemini URL Context rather than an unsupported provider.
+        if (config.kind === "commandcode") {
+            const result = await commandCodeUrlFetch(ctx, model, params.urls, onUpdate, signal);
+            return formatUrlContextResult(result, { modelId: model.id });
+        }
+
         if (config.kind !== "google") {
             return formatResult(
-                `url_context currently requires a Google Gemini-compatible model. Current model: ${model.id} (${model.provider}/${model.api}).\n\nUse web_search for cross-provider web search, or switch to Gemini for provider-native URL context retrieval.`,
+                `url_context requires a provider with URL retrieval: a Google Gemini-compatible model, or a Command Code model. Current model: ${model.id} (${model.provider}/${model.api}).\n\nUse web_search for cross-provider web search, or switch to Gemini or Command Code for URL context retrieval.`,
                 {
                     error: "unsupported_provider",
                     providerKind: config.kind,
                     model: model.id,
-                    supportedProviders: ["google", "google-generative-ai"],
+                    supportedProviders: ["google", "google-generative-ai", "commandcode"],
                     grounded: false,
                 }
             );

@@ -4,6 +4,7 @@ import { getProviderKind } from "./providers/config.ts";
 import { callGoogleStream, extractPromptFromGeminiBody } from "./providers/google.ts";
 import { callOpenAIStream } from "./providers/openai.ts";
 import { callAnthropicStream } from "./providers/anthropic.ts";
+import { commandCodeWebSearch } from "./providers/commandcode.ts";
 import type { StreamResult } from "./providers/types.ts";
 
 export { getProviderKind, getConfig } from "./providers/config.ts";
@@ -28,6 +29,12 @@ export async function callApiStream(
         throw new Error("No prompt text found in request body");
     }
 
+    // Command Code has no provider-native search tool: the search is a plain
+    // request to the backend's own /alpha/web-search endpoint, so it never goes
+    // through a streaming chat completion.
+    if (kind === "commandcode") {
+        return commandCodeWebSearch(ctx, model, prompt, {}, onUpdate, signal);
+    }
     if (kind === "openai" || kind === "xai") {
         return callOpenAIStream(ctx, model, prompt, onUpdate, signal, thinkingLevel);
     }
