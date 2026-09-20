@@ -7,8 +7,11 @@
  * （`pi-commandcode-provider` 的凭据链：env → pi 凭据 → `~/.commandcode/auth.json`），
  * 因此使用 Command Code 模型时无需第二个 provider、也无需额外密钥。
  *
- * 参考 dsh 的 `dsh-commandcode-provider` web-search provider 实现，这里把它的
- * 做法适配到 pi 的 `StreamResult` 形状，好让 `format.ts` 用与其它后端一致的方式渲染。
+ * 搜索结果本身是 HTTP JSON 响应（条目列表），不涉及任何模型的流式输出，
+ * 因此这里只做请求与结果整形：把服务端条目适配到 pi 的 `StreamResult` 形状，
+ * 好让 `format.ts` 用与其它后端一致的方式渲染。
+ *
+ * 端点的请求头与凭据链对齐 `pi-commandcode-provider`，见 `COMMAND_CODE_CLI_VERSION`。
  */
 
 import type { AgentToolUpdateCallback, ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -26,10 +29,13 @@ export const DEFAULT_COMMAND_CODE_API_BASE = "https://api.commandcode.ai";
 
 /**
  * Command Code 的 `/alpha/*` 端点要求请求头带上 CLI 版本号与运行环境。
- * 服务端目前不校验具体版本（探测中 1.56.0 与空值均返回 200），这里取一个
- * 已知可用的 CLI 版本，并与 `pi-commandcode-provider` 的目录快照保持接近。
+ *
+ * 取值与 `pi-commandcode-provider` 的 `COMMAND_CODE_CLI_VERSION` 保持一致（同一
+ * `/alpha/*` 空间、同一把 key，两者不一致会让同一账号发出两种版本头）。服务端
+ * 目前不校验具体版本（探测中旧版本与空值均返回 200），因此升级 provider 后此处
+ * 落后不会立刻报错；但 provider 提升该常量时，这里应同步跟随。
  */
-export const COMMAND_CODE_CLI_VERSION = "1.58.0";
+export const COMMAND_CODE_CLI_VERSION = "1.56.0";
 
 const SEARCH_ROUTE = "/alpha/web-search";
 const FETCH_ROUTE = "/alpha/web-fetch";

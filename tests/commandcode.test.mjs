@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { webSearch } from '../src/web_search.ts';
 import { urlContext } from '../src/url_context.ts';
 import {
+  COMMAND_CODE_CLI_VERSION,
   clampNumResults,
   commandCodeUrlFetch,
   commandCodeWebSearch,
@@ -96,6 +97,9 @@ test('web_search on a Command Code model posts to /alpha/web-search and renders 
   assert.equal(request.init.method, 'POST');
   assert.equal(request.init.headers.Authorization, 'Bearer cc-key');
   assert.match(request.init.headers['x-command-code-version'], /^\d+\.\d+\.\d+$/);
+  // Pinned to pi-commandcode-provider's COMMAND_CODE_CLI_VERSION so the two clients
+  // sharing one /alpha/* API key cannot drift apart silently.
+  assert.equal(request.init.headers['x-command-code-version'], COMMAND_CODE_CLI_VERSION);
   assert.equal(request.init.headers['x-cli-environment'], 'production');
   assert.deepEqual(request.body, { query: 'pi coding agent', numResults: 2 });
 
