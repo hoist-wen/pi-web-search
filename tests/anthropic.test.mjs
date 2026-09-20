@@ -98,6 +98,15 @@ test('Anthropic stream sends the Claude Code system prompt for OAuth credentials
   t.mock.method(globalThis, 'fetch', async (_url, init) => {
     const body = JSON.parse(init.body);
     assert.equal(init.headers.Authorization, 'Bearer sk-ant-oat01-test');
+    // Anthropic rejects OAuth requests from a claude-cli older than 2.1.251
+    // ("Claude Code 2.1.75 does not support this model"), so the default UA
+    // has to keep up with that floor.
+    const [, cliVersion] = /^claude-cli\/(\d+\.\d+\.\d+)$/.exec(init.headers['user-agent']) ?? [];
+    assert.ok(cliVersion, `expected a claude-cli user-agent, got ${init.headers['user-agent']}`);
+    const [major, minor, patch] = cliVersion.split('.').map(Number);
+    const floor = [2, 1, 251];
+    const meetsFloor = major !== floor[0] ? major > floor[0] : minor !== floor[1] ? minor > floor[1] : patch >= floor[2];
+    assert.ok(meetsFloor, `claude-cli/${cliVersion} is below the 2.1.251 floor`);
     assert.deepEqual(body.system, [
       { type: 'text', text: "You are Claude Code, Anthropic's official CLI for Claude." },
     ]);
