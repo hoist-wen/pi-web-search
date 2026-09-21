@@ -1,6 +1,7 @@
 import type { ExtensionContext, AgentToolUpdateCallback } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 import { callApiStream, getConfig } from "./api.ts";
+import { callOllamaUrlContext } from "./providers/ollama.ts";
 import { formatResult, formatUrlContextResult } from "./format.ts";
 import { commandCodeUrlFetch } from "./providers/commandcode.ts";
 import { errorResult, getModel, missingConfigResult } from "./utils.ts";
@@ -32,7 +33,6 @@ export async function urlContext(
 
     try {
         const config = getConfig(model);
-
         // Command Code serves URL reading from its own /alpha/web-fetch endpoint
         // with the provider's existing credentials, so it is a real alternative
         // to Gemini URL Context rather than an unsupported provider.
@@ -41,14 +41,19 @@ export async function urlContext(
             return formatUrlContextResult(result, { modelId: model.id });
         }
 
+        if (config.kind === "ollama") {
+            const result = await callOllamaUrlContext(ctx, model, params.query, params.urls, signal);
+            return formatUrlContextResult(result, { modelId: model.id });
+        }
+
         if (config.kind !== "google") {
             return formatResult(
-                `url_context requires a provider with URL retrieval: a Google Gemini-compatible model, or a Command Code model. Current model: ${model.id} (${model.provider}/${model.api}).\n\nUse web_search for cross-provider web search, or switch to Gemini or Command Code for URL context retrieval.`,
+                `url_context requires a provider with URL retrieval: a Google Gemini-compatible model, a Command Code model, or an Ollama Cloud model. Current model: ${model.id} (${model.provider}/${model.api}).\n\nUse web_search for cross-provider web search, or switch to Gemini, Command Code, or Ollama Cloud for URL context retrieval.`,
                 {
                     error: "unsupported_provider",
                     providerKind: config.kind,
                     model: model.id,
-                    supportedProviders: ["google", "google-generative-ai", "commandcode"],
+                    supportedProviders: ["google", "google-generative-ai", "commandcode", "ollama"],
                     grounded: false,
                 }
             );

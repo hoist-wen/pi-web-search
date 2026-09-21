@@ -5,6 +5,7 @@ import { callGoogleStream, extractPromptFromGeminiBody } from "./providers/googl
 import { callOpenAIStream } from "./providers/openai.ts";
 import { callAnthropicStream } from "./providers/anthropic.ts";
 import { commandCodeWebSearch } from "./providers/commandcode.ts";
+import { callOllamaSearch } from "./providers/ollama.ts";
 import type { StreamResult } from "./providers/types.ts";
 
 export { getProviderKind, getConfig } from "./providers/config.ts";
@@ -17,7 +18,8 @@ export async function callApiStream(
     body: any,
     onUpdate?: AgentToolUpdateCallback,
     signal?: AbortSignal,
-    thinkingLevel?: ModelThinkingLevel
+    thinkingLevel?: ModelThinkingLevel,
+    urls?: string[]
 ): Promise<StreamResult> {
     const kind = getProviderKind(model);
     if (kind === "google") {
@@ -35,6 +37,13 @@ export async function callApiStream(
     if (kind === "commandcode") {
         return commandCodeWebSearch(ctx, model, prompt, {}, onUpdate, signal);
     }
+
+    // Ollama search is a standalone REST call, not a model tool — the prompt
+    // carries the embedded URL list only for other providers, so strip it here.
+    if (kind === "ollama") {
+        return callOllamaSearch(ctx, model, prompt, urls, onUpdate, signal);
+    }
+
     if (kind === "openai" || kind === "xai") {
         return callOpenAIStream(ctx, model, prompt, onUpdate, signal, thinkingLevel);
     }

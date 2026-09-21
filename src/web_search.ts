@@ -3,7 +3,8 @@ import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { Type, type Static } from "typebox";
 import { callApiStream, getConfig } from "./api.ts";
 import { formatWebSearchResult } from "./format.ts";
-import { commandCodeSearchAndFetch, commandCodeWebSearch, MAX_NUM_RESULTS, MIN_NUM_RESULTS } from "./providers/commandcode.ts";import { errorResult, missingWebSearchConfigResult, resolveWebSearchModel } from "./utils.ts";
+import { commandCodeSearchAndFetch, commandCodeWebSearch, MAX_NUM_RESULTS, MIN_NUM_RESULTS } from "./providers/commandcode.ts";
+import { errorResult, missingWebSearchConfigResult, resolveWebSearchModel } from "./utils.ts";
 
 export const WebSearchSchema = Type.Object({
     query: Type.String({ description: "The search query or question to answer" }),
@@ -45,9 +46,11 @@ export async function webSearch(
 
     try {
         const config = getConfig(model);
-        
-        // Build prompt: include URLs if provided
-        const prompt = hasUrls
+
+        // Build prompt: include URLs if provided. Ollama receives the URL list as
+        // a separate argument (its search is a REST endpoint, not a model tool),
+        // so the prompt stays a clean query.
+        const prompt = hasUrls && config.kind !== "ollama"
             ? `${params.query}\n\nAlso analyze these URLs:\n${params.urls!.join("\n")}`
             : params.query;
 
@@ -74,7 +77,7 @@ export async function webSearch(
         const result = await callApiStream(ctx, model, {
             contents: [{ role: "user", parts: [{ text: prompt }] }],
             ...(tools ? { tools } : {})
-        }, onUpdate, signal, thinkingLevel);
+        }, onUpdate, signal, thinkingLevel, params.urls);
 
         return formatWebSearchResult(result, { modelId: model.id });
     } catch (e: any) {

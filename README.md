@@ -1,11 +1,11 @@
 # pi-web-search
 
-Provider-native web search for [pi](https://pi.dev) with Gemini + URL Context, xAI Grok, OpenAI Responses variants, Anthropic, OpenCode Zen/Go, and Command Code.
+Provider-native web search for [pi](https://pi.dev) with Gemini + URL Context, xAI Grok, OpenAI Responses variants, Anthropic, Ollama Cloud, OpenCode Zen/Go, and Command Code.
 
 > **Fork note:** this is [`hoist-wen/pi-web-search`](https://github.com/hoist-wen/pi-web-search), a fork of
 > [`ttttmr/pi-web-search`](https://github.com/ttttmr/pi-web-search) that adds the
 > [Command Code](#command-code) backend. Everything else is upstream code; updates are pulled
-> in by rebasing onto `upstream/main`.
+> in by merging `upstream/main`.
 
 ## Command Code
 
@@ -57,6 +57,7 @@ Search the web using your currently selected model. Automatically picks the righ
 | OpenAI Codex | Codex Responses API web search (`openai-codex-responses`) |
 | GitHub Copilot | OpenAI Responses API web search via Copilot credentials |
 | Anthropic | Messages API web search |
+| Ollama Cloud | Ollama web search API (`/api/web_search`, standalone REST) |
 | OpenCode Zen / Go | Responses API web search (models that use the `openai-responses` API) |
 | Command Code | `POST {apiBase}/alpha/web-search` |
 
@@ -64,15 +65,18 @@ GitHub Copilot OpenAI Responses models are supported, including Business and Ent
 
 OpenCode Zen and OpenCode Go Responses models (for example `opencode-go/gpt-5.6-luna` or `opencode-go/grok-4.6`) use the same Responses web search. OpenCode routes traffic per conversation, so `web_search` sends the `x-opencode-session` and `x-opencode-client` headers pi uses, keyed to the active session. Only models exposed through that Responses API are supported: OpenCode `chat/completions` models have no provider-native search tool, and the gateway's Anthropic Messages models are unverified.
 
+Ollama Cloud models (provider `ollama-cloud` or any model hosted on `ollama.com`) call Ollama's standalone web search API rather than a model tool. Auth is `OLLAMA_API_KEY` or `/login ollama-cloud`. Any `urls` are fetched through `web_fetch`. A local Ollama daemon is out of scope — the official `@ollama/pi-web-search` package covers its `/api/experimental/*` endpoints.
+
 Supports passing up to 20 additional URLs to analyze alongside the query. Successful `web_search` results are collapsed by default in pi; expand the tool call to inspect the full answer and source details.
 
 ### `url_context`
 
-Analyze up to 20 public URLs — web pages, documents, images, and YouTube videos.
+Gemini, Ollama Cloud, and Command Code. Analyze up to 20 public URLs — web pages, documents, images, and YouTube videos. Gemini uses native URL Context retrieval with verified metadata; Ollama uses its `web_fetch` endpoint (web pages and documents only); Command Code fetches each URL through its own backend.
 
 | Provider | Backend |
 |---|---|
 | Google Gemini | Native URL Context retrieval with verified metadata |
+| Ollama Cloud | `POST {root}/api/web_fetch` per URL |
 | Command Code | `POST {apiBase}/alpha/web-fetch` per URL |
 
 When using `google-generative-ai`, YouTube URLs are passed as `file_data` for native video understanding. See [Command Code](#command-code) for the Command Code backend.
@@ -110,9 +114,9 @@ When this file exists, `web_search` uses the configured provider/model first. If
 
 For OpenAI Responses models (including Azure, Codex, and Copilot), `web_search` inherits the agent's current thinking level on each call. Enabled levels are clamped to the selected search model's supported levels and translated through its `thinkingLevelMap` using pi's model metadata. This also applies when `web-search.json` selects a dedicated search model. Higher effort can increase latency and cost.
 
-When thinking is off or unavailable, or the search model is non-reasoning, the request omits `reasoning` and leaves the choice to the provider. Off does not force reasoning off: some models reject `reasoning.effort: "none"`. Google, Anthropic, and xAI behavior is unchanged.
+When thinking is off or unavailable, or the search model is non-reasoning, the request omits `reasoning` and leaves the choice to the provider. Off does not force reasoning off: some models reject `reasoning.effort: "none"`. Google, Anthropic, xAI, and Ollama behavior is unchanged.
 
-`url_context` is automatically removed from active tools unless the current model is Gemini or Command Code.
+`url_context` is automatically removed from active tools unless the current model is Gemini, Ollama Cloud, or Command Code.
 
 ## Test
 
