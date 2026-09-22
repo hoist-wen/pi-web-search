@@ -37,6 +37,10 @@ function jsonResponse(payload, status = 200) {
 test('Command Code models are classified as the commandcode provider kind', () => {
   assert.equal(getProviderKind(commandCodeModel()), 'commandcode');
   assert.equal(isCommandCodeModel(commandCodeModel()), true);
+  // 官方 @commandcode/pi-commandcode-provider 注册的 provider id 是 `command-code`，
+  // 旧版 patlux/pi-commandcode-provider 用的是 `commandcode`，两者都要识别。
+  assert.equal(getProviderKind(commandCodeModel({ provider: 'command-code', api: 'openai-completions' })), 'commandcode');
+  assert.equal(isCommandCodeModel({ provider: 'command-code', api: 'openai-completions' }), true);
   assert.equal(isCommandCodeModel({ provider: 'anthropic', api: 'anthropic-messages' }), false);
 });
 

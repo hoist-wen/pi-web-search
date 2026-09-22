@@ -53,7 +53,7 @@ export async function urlContext(
                     error: "unsupported_provider",
                     providerKind: config.kind,
                     model: model.id,
-                    supportedProviders: ["google", "google-generative-ai", "commandcode", "ollama"],
+                    supportedProviders: ["google", "google-generative-ai", "command-code", "commandcode", "ollama"],
                     grounded: false,
                 }
             );

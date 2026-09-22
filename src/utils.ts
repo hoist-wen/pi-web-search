@@ -4,10 +4,11 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { getProviderKind } from "./api.ts";
+import { isCommandCodeModel } from "./providers/commandcode.ts";
 
 // --- Model Selection ---
 
-const SUPPORTED_PROVIDERS = ["google-generative-ai", "antigravity", "xai", "openai-responses", "azure-openai-responses", "openai-codex-responses", "anthropic-messages", "commandcode", "ollama"];
+const SUPPORTED_PROVIDERS = ["google-generative-ai", "antigravity", "xai", "openai-responses", "azure-openai-responses", "openai-codex-responses", "anthropic-messages", "command-code", "commandcode", "ollama"];
 
 type WebSearchModelConfig =
     | { status: "missing"; path: string; }
@@ -108,7 +109,7 @@ export async function resolveWebSearchModel(ctx: ExtensionContext): Promise<Mode
 /** First available Command Code model, used only as a last-resort search backend. */
 function findCommandCodeFallbackModel(ctx: ExtensionContext): Model<Api> | undefined {
     try {
-        return ctx.modelRegistry.getAvailable().find((candidate) => isSupportedSearchModel(candidate) && candidate.provider === "commandcode");
+        return ctx.modelRegistry.getAvailable().find((candidate) => isSupportedSearchModel(candidate) && isCommandCodeModel(candidate));
     } catch {
         return undefined;
     }

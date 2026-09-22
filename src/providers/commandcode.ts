@@ -21,7 +21,17 @@ import { getAuth } from "./auth.ts";
 import { mergeStreamResults, pushNativeSearchEvent, pushUniqueSearchResult, sanitizeSearchResults, titleFromUrl } from "./results.ts";
 import type { SearchResultDetail, StreamResult } from "./types.ts";
 
-/** pi 中 Command Code provider 注册使用的 provider id。 */
+/**
+ * pi 中 Command Code provider 注册使用的 provider id。
+ *
+ * 官方 `@commandcode/pi-commandcode-provider` 注册为 `command-code`，而本后端最初
+ * 对齐的 `patlux/pi-commandcode-provider` 注册为 `commandcode`。两者都必须接受：
+ * 只认其中一个会让另一个实现下的模型整体回落到 anthropic/openai 原生后端，
+ * 表现为「当前模型不支持原生搜索」。
+ */
+export const COMMAND_CODE_PROVIDERS = ["command-code", "commandcode"] as const;
+
+/** 结果 details 与日志里回显的后端标识（沿用历史值，保持既有输出稳定）。 */
 export const COMMAND_CODE_PROVIDER = "commandcode";
 
 /** Command Code 未显式配置 baseUrl 时的默认 API 根地址。 */
@@ -51,7 +61,7 @@ export type CommandCodeFetchFormat = "markdown" | "text" | "html";
 
 /** 当前模型是否由 Command Code 承载。 */
 export function isCommandCodeModel(model: Model<Api> | undefined): boolean {
-    return model?.provider === COMMAND_CODE_PROVIDER;
+    return model !== undefined && (COMMAND_CODE_PROVIDERS as readonly string[]).includes(model.provider);
 }
 
 /**
