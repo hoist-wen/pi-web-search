@@ -18,6 +18,7 @@ Required env:
   PI_WEB_SEARCH_MODEL_GOOGLE
 
 Optional env:
+  PI_WEB_SEARCH_MODEL_DEEPSEEK=deepseek/deepseek-v4-flash
   PI_BIN=pi
   PI_WEB_SEARCH_EXTENSION=./src/index.ts
   PI_PROVIDER_EXTENSIONS=/path/a.ts,/path/b.ts
@@ -39,11 +40,12 @@ const models = [
   process.env.PI_WEB_SEARCH_MODEL_OPENAI,
   process.env.PI_WEB_SEARCH_MODEL_ANTHROPIC,
   process.env.PI_WEB_SEARCH_MODEL_GOOGLE,
+  process.env.PI_WEB_SEARCH_MODEL_DEEPSEEK,
 ].filter(Boolean);
 
 if (models.length === 0) {
   usage();
-  throw new Error('No real web_search models configured. Set PI_WEB_SEARCH_MODEL_XAI / OPENAI / ANTHROPIC / GOOGLE in .env');
+  throw new Error('No real web_search models configured. Set PI_WEB_SEARCH_MODEL_XAI / OPENAI / ANTHROPIC / GOOGLE / DEEPSEEK in .env');
 }
 
 let failed = false;

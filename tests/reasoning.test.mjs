@@ -51,6 +51,35 @@ test('xAI does not receive OpenAI effort settings', async (t) => {
   await callApiStream(ctx, { ...model, provider: 'xai' }, prompt, undefined, undefined, 'medium');
 });
 
+test('gateway-hosted Grok keeps effort settings', async (t) => {
+  let body;
+  t.mock.method(globalThis, 'fetch', async (_url, init) => {
+    body = JSON.parse(init.body);
+    return response();
+  });
+  await callApiStream(ctx, { ...model, provider: 'custom-gateway', id: 'grok-4.7' }, prompt, undefined, undefined, 'medium');
+  assert.deepEqual(body.reasoning, { effort: 'medium' });
+  assert.deepEqual(body.include, ['web_search_call.action.sources']);
+
+  // Dialect override changes wire shape only; a non-xai provider still sends effort.
+  await callApiStream(ctx, { ...model, provider: 'custom-gateway', compat: { webSearchDialect: 'grok' } }, prompt, undefined, undefined, 'medium');
+  assert.deepEqual(body.reasoning, { effort: 'medium' });
+  assert.deepEqual(body.include, ['web_search_call.action.sources']);
+});
+
+test('native xAI Grok omits effort regardless of dialect override', async (t) => {
+  let body;
+  t.mock.method(globalThis, 'fetch', async (_url, init) => {
+    body = JSON.parse(init.body);
+    return response();
+  });
+  const xaiGrok = { ...model, provider: 'xai', id: 'grok-4.6' };
+  await callApiStream(ctx, xaiGrok, prompt, undefined, undefined, 'medium');
+  assert.equal(Object.hasOwn(body, 'reasoning'), false);
+  await callApiStream(ctx, { ...xaiGrok, compat: { webSearchDialect: 'openai' } }, prompt, undefined, undefined, 'medium');
+  assert.equal(Object.hasOwn(body, 'reasoning'), false);
+});
+
 test('registered tool reads the current agent thinking level on every invocation', async (t) => {
   let level = 'medium';
   let tool;

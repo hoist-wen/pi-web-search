@@ -30,6 +30,53 @@ for (const [provider, api, baseUrl, apiKey] of [
   });
 }
 
+for (const [label, provider, api, baseUrl, apiKey] of [
+  ['OpenAI OAuth', 'openai', 'openai-responses', 'https://api.openai.com/v1', 'chatgpt-access-token'],
+  ['OpenAI API key', 'openai', 'openai-responses', 'https://api.openai.com/v1', 'sk-proj-test'],
+  ['Azure OpenAI', 'azure-openai', 'azure-openai-responses', 'https://example-resource.cognitiveservices.azure.com/openai/v1', 'entra-token'],
+  ['GitHub Copilot', 'github-copilot', 'openai-responses', 'https://api.individual.githubcopilot.com', 'copilot-token'],
+]) {
+  test(`${label} Responses web search sends message-array input without Codex routing`, async (t) => {
+    let requestCount = 0;
+    t.mock.method(globalThis, 'fetch', async (url, init) => {
+      requestCount++;
+      assert.equal(url, `${baseUrl}/responses`);
+      assert.equal(init.headers.authorization, `Bearer ${apiKey}`);
+      assert.equal(Object.hasOwn(init.headers, 'chatgpt-account-id'), false);
+      assert.equal(Object.hasOwn(init.headers, 'originator'), false);
+
+      const body = JSON.parse(init.body);
+      assert.deepEqual(body.input, [{
+        role: 'user',
+        content: [{ type: 'input_text', text: 'Search OpenAI docs' }],
+      }]);
+      assert.deepEqual(body.tools, [{ type: 'web_search' }]);
+      assert.deepEqual(body.include, ['web_search_call.action.sources', 'web_search_call.results']);
+      assert.equal(body.stream, true);
+      assert.equal(body.store, false);
+      assert.equal(Object.hasOwn(body, 'instructions'), false);
+      assert.equal(Object.hasOwn(body, 'tool_choice'), false);
+      assert.equal(Object.hasOwn(body, 'parallel_tool_calls'), false);
+      return makeResponse([
+        { data: { type: 'response.output_text.delta', delta: 'OpenAI search answer' } },
+        { data: { type: 'response.completed', response: { output: [
+          { type: 'web_search_call', id: 'ws_responses', status: 'completed', action: { type: 'search', query: 'OpenAI docs' } },
+        ] } } },
+      ]);
+    });
+
+    const result = await callApiStream(mockCtx(apiKey), {
+      id: 'gpt-test', provider, api, baseUrl, reasoning: false, headers: {},
+    }, { contents: [{ parts: [{ text: 'Search OpenAI docs' }] }] });
+
+    assert.equal(requestCount, 1);
+    assert.equal(result.text, 'OpenAI search answer');
+    assert.equal(result.providerKind, 'openai');
+    assert.equal(result.nativeSearchUsed, true);
+    assert.deepEqual(result.searchQueries, ['OpenAI docs']);
+  });
+}
+
 test('GitHub Copilot Responses uses the credential-specific base URL exposed by pi', async (t) => {
   t.mock.method(globalThis, 'fetch', async (url, init) => {
     assert.equal(url, 'https://api.business.githubcopilot.com/responses');
@@ -295,6 +342,96 @@ test('xAI Responses uses Grok web search schema and inline citations', async (t)
   assert.equal(result.text, 'xAI docs answer[[1]](https://docs.x.ai/)');
   assert.equal(result.sources[0].title, '1');
   assert.equal(result.sources[0].url, 'https://docs.x.ai/');
+});
+
+test('Grok on an OpenAI-compatible gateway uses Grok web search schema', async (t) => {
+  const bodies = [];
+  t.mock.method(globalThis, 'fetch', async (url, init) => {
+    assert.equal(url, 'https://gateway.example.com/v1/responses');
+    bodies.push(JSON.parse(init.body));
+    return makeResponse([
+      { data: { type: 'response.output_text.delta', delta: 'Gateway answer[[1]](https://docs.x.ai/)' } },
+      // Grok's annotation spans the inline [[1]](url) markup itself; the OpenAI
+      // parser would append a duplicate "[1]" marker at end_index.
+      { data: { type: 'response.output_text.annotation.added', annotation: {
+        type: 'url_citation', start_index: 14, end_index: 39, title: '1', url: 'https://docs.x.ai/',
+      } } },
+      { data: { type: 'response.completed', response: { output: [
+        { type: 'message', content: [{ type: 'output_text', text: 'Gateway answer[[1]](https://docs.x.ai/)', annotations: [{ type: 'url_citation', title: '1', url: 'https://docs.x.ai/' }] }] },
+      ] } } },
+    ]);
+  });
+
+  const gateway = { provider: 'custom-gateway', api: 'openai-responses', baseUrl: 'https://gateway.example.com/v1', reasoning: false, headers: {} };
+  const result = await callApiStream(mockCtx('test-key'), { ...gateway, id: 'grok-4.7' },
+    { contents: [{ parts: [{ text: 'Search xAI docs' }] }] });
+  // Same gateway, non-Grok model: keeps the OpenAI schema.
+  const openaiResult = await callApiStream(mockCtx('test-key'), { ...gateway, id: 'gpt-6-astra' },
+    { contents: [{ parts: [{ text: 'Search xAI docs' }] }] });
+
+  assert.deepEqual(bodies[0].input, [{ role: 'user', content: 'Search xAI docs' }]);
+  assert.deepEqual(bodies[0].include, ['web_search_call.action.sources']);
+  // Inline citations are preserved as-is; no index marker is inserted.
+  assert.equal(result.text, 'Gateway answer[[1]](https://docs.x.ai/)');
+  assert.deepEqual(result.sources.map((s) => s.url), ['https://docs.x.ai/']);
+  // Wire shape is Grok's, but provider identity stays with the gateway.
+  assert.equal(result.providerKind, 'openai');
+
+  assert.deepEqual(bodies[1].input, [{
+    role: 'user',
+    content: [{ type: 'input_text', text: 'Search xAI docs' }],
+  }]);
+  assert.deepEqual(bodies[1].include, ['web_search_call.action.sources', 'web_search_call.results']);
+  // Control: the same stream through the OpenAI parser gets an index marker,
+  // so the Grok assertion above actually distinguishes the two citation paths.
+  assert.equal(openaiResult.text, 'Gateway answer[[1]](https://docs.x.ai/)[1]');
+});
+
+test('compat.webSearchDialect overrides the default Grok id detection', async (t) => {
+  let body;
+  t.mock.method(globalThis, 'fetch', async (_url, init) => {
+    body = JSON.parse(init.body);
+    return makeMinimalOpenAIResponse();
+  });
+
+  const GROK = { input: [{ role: 'user', content: 'q' }], include: ['web_search_call.action.sources'] };
+  const OPENAI = { input: [{ role: 'user', content: [{ type: 'input_text', text: 'q' }] }], include: ['web_search_call.action.sources', 'web_search_call.results'] };
+  const base = { api: 'openai-responses', baseUrl: 'https://gateway.example.com/v1', reasoning: false, headers: {} };
+  for (const [label, model, expected] of [
+    ['gateway grok-4.6 opted out', { ...base, provider: 'custom-gateway', id: 'grok-4.6', compat: { webSearchDialect: 'openai' } }, OPENAI],
+    ['native xai opted out', { ...base, provider: 'xai', id: 'grok-4.6', compat: { webSearchDialect: 'openai' } }, OPENAI],
+    ['non-Grok id opted in', { ...base, provider: 'custom-gateway', id: 'gpt-6-astra', compat: { webSearchDialect: 'grok' } }, GROK],
+    ['prefixed id opted in', { ...base, provider: 'custom-gateway', id: 'x-ai/grok-4', compat: { webSearchDialect: 'grok' } }, GROK],
+    ['prefixed id is not matched by default', { ...base, provider: 'custom-gateway', id: 'x-ai/grok-4' }, OPENAI],
+    ['grok substring is not matched by default', { ...base, provider: 'custom-gateway', id: 'grokking-model' }, OPENAI],
+    ['unknown override value is ignored', { ...base, provider: 'custom-gateway', id: 'grok-4.6', compat: { webSearchDialect: 'bogus' } }, GROK],
+  ]) {
+    await callApiStream(mockCtx('test-key'), model, { contents: [{ parts: [{ text: 'q' }] }] });
+    assert.deepEqual({ input: body.input, include: body.include }, expected, label);
+  }
+});
+
+test('OpenCode Go Grok gets the Grok schema and keeps session headers', async (t) => {
+  let request;
+  t.mock.method(globalThis, 'fetch', async (url, init) => {
+    request = { url, headers: init.headers, body: JSON.parse(init.body) };
+    return makeMinimalOpenAIResponse();
+  });
+
+  const ctx = mockCtx('opencode-go-key', undefined, undefined, undefined, { sessionId: 'session-abc' });
+  await callApiStream(ctx, {
+    id: 'grok-4.6',
+    provider: 'opencode-go',
+    api: 'openai-responses',
+    baseUrl: 'https://opencode.ai/zen/go/v1',
+    reasoning: false,
+    headers: {},
+  }, { contents: [{ parts: [{ text: 'q' }] }] });
+
+  assert.deepEqual(request.body.include, ['web_search_call.action.sources']);
+  assert.deepEqual(request.body.input, [{ role: 'user', content: 'q' }]);
+  assert.equal(request.headers['x-opencode-session'], 'session-abc');
+  assert.equal(request.headers['x-opencode-client'], 'pi');
 });
 
 test('web_search exposes all additional results without provider metadata', async (t) => {

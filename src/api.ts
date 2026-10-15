@@ -47,7 +47,7 @@ export async function callApiStream(
     if (kind === "openai" || kind === "xai") {
         return callOpenAIStream(ctx, model, prompt, onUpdate, signal, thinkingLevel);
     }
-    if (kind === "anthropic") {
+    if (kind === "anthropic" || kind === "deepseek") {
         return callAnthropicStream(ctx, model, prompt, onUpdate, signal);
     }
 

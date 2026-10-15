@@ -29,10 +29,12 @@ test('getModel does not fall back to another configured supported model', async 
 
   assert.equal(await getModel(ctx), undefined);
   const result = missingConfigResult(ctx);
-  assert.match(result.content[0].text, /will not switch to another configured model automatically/i);
-  assert.match(result.content[0].text, /gpt-test/);
+  assert.match(result.content[0].text, /no native web search/);
+  assert.match(result.content[0].text, /openai-chat-completions/);
+  assert.match(result.content[0].text, /web-search\.json/);
   assert.equal(result.details.error, 'unsupported_model');
-  assert.deepEqual(result.details.availableSupportedModels, ['gpt-test (proxy-provider/openai-responses)']);
+  assert.equal(result.details.api, 'openai-chat-completions');
+  assert.equal(result.details.currentModel, 'local-test (local-provider/openai-chat-completions)');
 });
 
 test('getModel accepts Azure OpenAI Responses models', async () => {
@@ -164,8 +166,10 @@ test('getWebSearchModel reports unsupported configured model instead of falling 
     assert.equal(await getWebSearchModel(ctx), undefined);
     const result = missingWebSearchConfigResult(ctx);
     assert.match(result.content[0].text, /Configured web search model local-test/i);
-    assert.match(result.content[0].text, /does not support native web search/i);
+    assert.match(result.content[0].text, /no native web search/i);
+    assert.match(result.content[0].text, /openai-chat-completions/);
     assert.equal(result.details.error, 'unsupported_model');
     assert.equal(result.details.configPath, configPath);
+    assert.equal(result.details.api, 'openai-chat-completions');
   });
 });

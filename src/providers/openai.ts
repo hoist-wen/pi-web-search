@@ -1,7 +1,7 @@
 import type { ExtensionContext, AgentToolUpdateCallback } from "@earendil-works/pi-coding-agent";
 import { clampThinkingLevel, type Api, type Model, type ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { TextDecoder } from "util";
-import { getProviderKind } from "./config.ts";
+import { getProviderKind, getSearchDialect } from "./config.ts";
 import { getAuth, getProviderSessionHeaders, type ResolvedAuth } from "./auth.ts";
 import { readSseEvents } from "./sse.ts";
 import {
@@ -138,17 +138,20 @@ export async function callOpenAIStream(
     const requestHeaders = Object.fromEntries(headers.entries());
 
     const isXai = getProviderKind(model) === "xai";
+    // Dialect shapes the wire format only (input, include, citations); labels,
+    // providerKind, and reasoning stay keyed to provider identity.
+    const isGrok = getSearchDialect(model) === "grok";
     const searchProvider: "xai" | "openai" = isXai ? "xai" : "openai";
     const providerSourceName = isXai ? "xai" : "openai";
     const requestBody: any = {
         model: model.id,
         input: isCodex
             ? [{ role: "user", content: [{ type: "input_text", text: prompt }] }]
-            : isXai
+            : isGrok
                 ? [{ role: "user", content: prompt }]
-                : prompt,
+                : [{ role: "user", content: [{ type: "input_text", text: prompt }] }],
         tools: [{ type: "web_search" }],
-        ...(isCodex || isXai
+        ...(isCodex || isGrok
             ? { include: ["web_search_call.action.sources"] }
             : { include: ["web_search_call.action.sources", "web_search_call.results"] }),
         stream: true,
@@ -158,6 +161,7 @@ export async function callOpenAIStream(
     // model (which can differ from the conversation model). Keep provider defaults
     // when thinking is off/unavailable; do not reintroduce an implicit "none".
     // xAI shares this transport but does not share OpenAI's effort semantics.
+    // Keyed to provider identity, not dialect: gateway-hosted Grok keeps effort.
     if (!isXai && model.reasoning && thinkingLevel && thinkingLevel !== "off") {
         const level = clampThinkingLevel(model, thinkingLevel);
         const effort = model.thinkingLevelMap?.[level] ?? level;
@@ -292,7 +296,7 @@ export async function callOpenAIStream(
         }
     });
 
-    const cited = isXai
+    const cited = isGrok
         ? preserveInlineCitations(accumulatedText || "No answer available.", citations)
         : applyIndexCitations(accumulatedText || "No answer available.", citations);
     const citationDetails = citations.map((citation) => ({

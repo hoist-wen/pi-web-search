@@ -345,7 +345,9 @@ test('web_search falls back to a Command Code model when the current model has n
   const ctx = mockCtx('cc-key', currentModel, undefined, undefined, { models: [currentModel, fallback] });
 
   await withWebSearchConfig(null, async () => {
-    assert.equal(await resolveWebSearchModel(ctx), fallback);
+    const resolved = await resolveWebSearchModel(ctx);
+    assert.equal(resolved.status, 'ok');
+    assert.equal(resolved.model, fallback);
   });
 });
 
@@ -367,7 +369,9 @@ test('an explicit web-search.json pin still wins over the Command Code fallback'
   const ctx = mockCtx('test-key', currentModel, undefined, undefined, { models: [currentModel, pinned, commandCodeModel()] });
 
   await withWebSearchConfig({ provider: 'proxy-provider', model: 'gpt-test' }, async () => {
-    assert.equal(await resolveWebSearchModel(ctx), pinned);
+    const resolved = await resolveWebSearchModel(ctx);
+    assert.equal(resolved.status, 'ok');
+    assert.equal(resolved.model, pinned);
   });
 });
 
@@ -382,7 +386,9 @@ test('an unsupported explicit pin is not silently replaced by the Command Code f
   const ctx = mockCtx('test-key', currentModel, undefined, undefined, { models: [currentModel, commandCodeModel()] });
 
   await withWebSearchConfig({ provider: 'local-provider', model: 'local-test' }, async () => {
-    assert.equal(await resolveWebSearchModel(ctx), undefined);
+    const resolved = await resolveWebSearchModel(ctx);
+    assert.equal(resolved.status, 'configured_model_unsupported');
+    assert.equal(resolved.model.id, 'local-test');
   });
 });
 

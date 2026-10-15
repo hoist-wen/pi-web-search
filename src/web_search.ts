@@ -4,7 +4,7 @@ import { Type, type Static } from "typebox";
 import { callApiStream, getConfig } from "./api.ts";
 import { formatWebSearchResult } from "./format.ts";
 import { commandCodeSearchAndFetch, commandCodeWebSearch, MAX_NUM_RESULTS, MIN_NUM_RESULTS } from "./providers/commandcode.ts";
-import { errorResult, missingWebSearchConfigResult, resolveWebSearchModel } from "./utils.ts";
+import { errorResult, resolveWebSearchModel, webSearchModelError } from "./utils.ts";
 
 export const WebSearchSchema = Type.Object({
     query: Type.String({ description: "The search query or question to answer" }),
@@ -28,8 +28,9 @@ export async function webSearch(
     ctx: ExtensionContext,
     thinkingLevel?: ModelThinkingLevel
 ) {
-    const model = await resolveWebSearchModel(ctx);
-    if (!model) return missingWebSearchConfigResult(ctx);
+    const resolved = await resolveWebSearchModel(ctx);
+    if (resolved.status !== "ok") return webSearchModelError(ctx, resolved);
+    const model = resolved.model;
 
     const hasUrls = params.urls && params.urls.length > 0;
     const urlCount = hasUrls ? params.urls!.length : 0;

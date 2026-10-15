@@ -1,6 +1,7 @@
 import type { ExtensionContext, AgentToolUpdateCallback } from "@earendil-works/pi-coding-agent";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { getAuth, getProviderSessionHeaders } from "./auth.ts";
+import { getProviderKind } from "./config.ts";
 import { readSseEvents } from "./sse.ts";
 import {
     applyTextCitations,
@@ -21,6 +22,14 @@ function resolveAnthropicMessagesUrl(baseUrl: string): string {
     return base.endsWith("/v1") ? `${base}/messages` : `${base}/v1/messages`;
 }
 
+// DeepSeek exposes server-side search only on its Anthropic-compatible route.
+// Preserve a configured proxy origin/path instead of sending its credentials elsewhere.
+export function resolveDeepSeekBaseUrl(baseUrl: string): string {
+    const base = baseUrl.replace(/\/+$/, "");
+    if (/\/anthropic(?:\/v1)?$/.test(base)) return base;
+    return `${base.replace(/\/v1$/, "")}/anthropic`;
+}
+
 export async function callAnthropicStream(
     ctx: ExtensionContext,
     model: Model<Api>,
@@ -28,12 +37,15 @@ export async function callAnthropicStream(
     onUpdate?: AgentToolUpdateCallback,
     signal?: AbortSignal
 ): Promise<StreamResult> {
+    const kind = getProviderKind(model) === "deepseek" ? "deepseek" : "anthropic";
+    const isDeepSeek = kind === "deepseek";
+    const providerName = isDeepSeek ? "DeepSeek" : "Anthropic";
     const auth = await getAuth(ctx, model);
     if (!auth.ok) {
         throw new Error(auth.error || "Failed to get API key and headers");
     }
 
-    const isOAuth = !!auth.apiKey && auth.apiKey.includes("sk-ant-oat");
+    const isOAuth = !isDeepSeek && !!auth.apiKey && auth.apiKey.includes("sk-ant-oat");
     const headers: Record<string, string> = {
         "Content-Type": "application/json",
         "Accept": "text/event-stream",
@@ -57,6 +69,11 @@ export async function callAnthropicStream(
         }
     }
 
+    if (isDeepSeek && !Object.entries(headers).some(([name, value]) =>
+        value && ["authorization", "x-api-key"].includes(name.toLowerCase()))) {
+        throw new Error("No DeepSeek API key found. Run /login in pi and select DeepSeek, or set DEEPSEEK_API_KEY.");
+    }
+
     const maxTokens = Math.min(Math.max(1024, Math.floor(model.maxTokens / 3) || 4096), 8192);
     const requestBody = {
         model: model.id,
@@ -65,11 +82,17 @@ export async function callAnthropicStream(
         // system prompt, reporting it as an opaque 429 rate_limit_error.
         ...(isOAuth ? { system: [{ type: "text", text: CLAUDE_CODE_SYSTEM_PROMPT }] } : {}),
         messages: [{ role: "user", content: prompt }],
-        tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 10 }],
+        tools: [{
+            type: "web_search_20260209",
+            name: "web_search",
+            max_uses: 10,
+            // Keep direct search compatible with models without programmatic tool calling.
+            allowed_callers: ["direct"],
+        }],
         stream: true,
     };
 
-    const response = await fetch(resolveAnthropicMessagesUrl(model.baseUrl), {
+    const response = await fetch(resolveAnthropicMessagesUrl(isDeepSeek ? resolveDeepSeekBaseUrl(auth.baseUrl || model.baseUrl) : model.baseUrl), {
         method: "POST",
         headers,
         body: JSON.stringify(requestBody),
@@ -77,7 +100,7 @@ export async function callAnthropicStream(
     });
 
     if (!response.ok) {
-        throw new Error(`Anthropic API error (${response.status}): ${await response.text()}`);
+        throw new Error(`${providerName} API error (${response.status}): ${await response.text()}`);
     }
 
     let accumulatedText = "";
@@ -94,7 +117,7 @@ export async function callAnthropicStream(
             title,
             url: source.url,
             pageAge: source.page_age ?? source.pageAge,
-            source: "anthropic.web_search_tool_result",
+            source: `${kind}.web_search_tool_result`,
             type: source.type || "web_search_result",
             raw: { toolUseId, ...source },
         });
@@ -107,30 +130,31 @@ export async function callAnthropicStream(
                 accumulatedText += block.text;
                 onUpdate?.({ content: [{ type: "text", text: accumulatedText }], details: { streaming: true } });
             } else if (block?.type === "server_tool_use" && block.name === "web_search") {
-                pushNativeSearchEvent(nativeSearchEvents, "anthropic.content_block_start.server_tool_use.web_search");
+                pushNativeSearchEvent(nativeSearchEvents, `${kind}.content_block_start.server_tool_use.web_search`);
                 nativeSearchCalls.push({
                     id: block.id,
-                    provider: "anthropic",
+                    provider: kind,
                     status: "in_progress",
                     actionType: block.name,
                     queries: typeof block.input?.query === "string" ? [block.input.query] : undefined,
                     raw: block,
                 });
                 onUpdate?.({
-                    content: [{ type: "text", text: accumulatedText || "Searching the web with Anthropic..." }],
+                    content: [{ type: "text", text: accumulatedText || `Searching the web with ${providerName}...` }],
                     details: { streaming: true, searching: true }
                 });
             } else if (block?.type === "web_search_tool_result") {
-                pushNativeSearchEvent(nativeSearchEvents, "anthropic.content_block_start.web_search_tool_result");
+                pushNativeSearchEvent(nativeSearchEvents, `${kind}.content_block_start.web_search_tool_result`);
                 const call = nativeSearchCalls.find((item) => item.id === block.tool_use_id);
                 if (call) call.status = "completed";
-                else nativeSearchCalls.push({ id: block.tool_use_id, provider: "anthropic", status: "completed", actionType: "web_search", raw: block });
+                else nativeSearchCalls.push({ id: block.tool_use_id, provider: kind, status: "completed", actionType: "web_search", raw: block });
                 if (Array.isArray(block.content)) {
                     for (const result of block.content) collectSource(result, block.tool_use_id);
                 } else if (block.content?.type === "web_search_tool_result_error") {
+                    if (isDeepSeek) throw new Error(`DeepSeek web search failed: ${block.content.error_code || "unknown error"}`);
                     pushUniqueSearchResult(searchResults, {
                         status: block.content.error_code,
-                        source: "anthropic.web_search_tool_result_error",
+                        source: `${kind}.web_search_tool_result_error`,
                         type: block.content.type,
                         raw: block,
                     });
@@ -151,7 +175,7 @@ export async function callAnthropicStream(
                         citedText: citation.cited_text,
                         title: citation.title || titleFromUrl(citation.url),
                         url: citation.url,
-                        source: "anthropic.citations_delta",
+                        source: `${kind}.citations_delta`,
                         type: citation.type,
                         raw: citation,
                     };
@@ -169,7 +193,7 @@ export async function callAnthropicStream(
         title: citation.title || titleFromUrl(citation.url),
         url: citation.url,
         citedText: citation.citedText,
-        source: "anthropic.citation",
+        source: `${kind}.citation`,
         type: "citation",
         raw: citation,
     }));
@@ -182,7 +206,7 @@ export async function callAnthropicStream(
     return {
         text: cited.text,
         sources: cited.sources.length ? normalizeCitedSources(cited.sources) : derivedSources,
-        providerKind: "anthropic",
+        providerKind: kind,
         nativeSearchUsed: nativeSearchEvents.length > 0 || nativeSearchCalls.length > 0 || sanitizedSearchResults.length > 0,
         nativeSearchEvents,
         nativeSearchCalls,
